@@ -681,11 +681,11 @@ export default function BoardPage({ isTemplate }: { isTemplate?: boolean }) {
                   >
                     {(provided) => (
                       <div
-                        className="flex"
+                        className="flex w-full"
                         ref={provided.innerRef}
                         {...provided.droppableProps}
                       >
-                        <div className="min-w-[2rem]" />
+                        <div className="hidden min-w-[2rem] xl:block" />
                         {boardData.lists.map((list, index) => (
                           <List
                             index={index}
