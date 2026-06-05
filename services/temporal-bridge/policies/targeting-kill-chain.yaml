@@ -1,0 +1,57 @@
+# Default policy for any board whose lanes match the F2T2EA / military-execution
+# kill-chain shape. The bridge picks this up automatically when at least 4 of
+# the canonical lanes appear on a board.
+#
+# Lane names are short labels so 6 lanes fit on a typical 1440px viewport.
+# Originals: DEBATE=DECISIONAL DEBATE, DYNAMIC=DYNAMIC TARGETING,
+#            TASKING=PENDING TASKING, EXECUTING=IN EXECUTION,
+#            ASSESS=PERIODICAL ASSESSMENT, DONE=COMPLETED.
+version: 1
+name: targeting-kill-chain
+match:
+  any_lanes:
+    - "DEBATE"
+    - "DYNAMIC"
+    - "TASKING"
+    - "EXECUTING"
+    - "ASSESS"
+    - "DONE"
+  min_matches: 4
+
+trigger_label: WORKFLOW
+
+lanes:
+  "DEBATE":
+    on_enter:
+      - { kind: comment, body: "Workflow engaged — pending NCA / JFLCC decision." }
+    wait_for_lane: ["DYNAMIC", "TASKING"]
+
+  "DYNAMIC":
+    on_enter:
+      - { kind: comment, body: "Time-sensitive: F2T2EA loop opened. Telemetry stream active." }
+    timeout_minutes: 60
+    on_timeout: { kind: comment, body: "WARNING: dynamic-targeting window exceeded 60 min — escalate." }
+    wait_for_lane: ["TASKING", "ASSESS"]
+
+  "TASKING":
+    on_enter:
+      - { kind: comment, body: "Tasking queued. Awaiting ROE-CLEARED label before commit-to-strike." }
+    wait_for_label: "ROE-CLEARED"
+    on_label: { advance_to: "EXECUTING", comment: "ROE-CLEARED received — advancing to EXECUTING." }
+
+  "EXECUTING":
+    on_enter:
+      - { kind: comment, body: "Strike package executing. TOT timer started." }
+    auto_advance_after_minutes: 5
+    next_lane: "ASSESS"
+
+  "ASSESS":
+    on_enter:
+      - { kind: comment, body: "BDA window open — awaiting ASSESS label." }
+    wait_for_label: "ASSESS"
+    on_label: { advance_to: "DONE", comment: "BDA confirmed — closing card." }
+
+  "DONE":
+    on_enter:
+      - { kind: comment, body: "Card complete. Workflow closed." }
+    terminal: true

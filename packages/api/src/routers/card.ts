@@ -27,6 +27,56 @@ import {
   sendWebhooksForWorkspace,
 } from "../utils/webhook";
 
+/**
+ * Helper: emit a card.updated webhook when a label is attached or detached.
+ * Without this the bridge cannot react to opt-in (WORKFLOW label) toggles
+ * because Kan only fires create/update/move/delete webhooks for the core
+ * card mutation routes — not for the label/member side-routes.
+ */
+function emitCardUpdatedForLabelChange(
+  ctx: { db: Parameters<typeof sendWebhooksForWorkspace>[0] },
+  card: {
+    id: number;
+    workspaceId: number;
+    listPublicId: string;
+    listName: string;
+    boardPublicId: string;
+    boardName: string;
+  },
+  label: { name: string },
+  mode: "added" | "removed",
+  cardPublicId: string,
+) {
+  sendWebhooksForWorkspace(
+    ctx.db,
+    card.workspaceId,
+    createCardWebhookPayload(
+      "card.updated",
+      {
+        id: String(card.id),
+        publicId: cardPublicId,
+        title: "",
+        description: null,
+        dueDate: null,
+        listId: card.listPublicId,
+      },
+      {
+        boardId: card.boardPublicId,
+        boardName: card.boardName,
+        listName: card.listName,
+        changes: {
+          labels: {
+            from: mode === "added" ? [] : [{ name: label.name }],
+            to: mode === "added" ? [{ name: label.name }] : [],
+          },
+        },
+      },
+    ),
+  ).catch((error) => {
+    console.error("Webhook delivery (label change) failed:", error);
+  });
+}
+
 export const cardRouter = createTRPCRouter({
   create: protectedProcedure
     .meta({
@@ -519,6 +569,13 @@ export const cardRouter = createTRPCRouter({
           createdBy: userId,
         });
 
+        emitCardUpdatedForLabelChange(
+          ctx,
+          card,
+          label,
+          "removed",
+          input.cardPublicId,
+        );
         return { newLabel: false };
       }
 
@@ -538,6 +595,13 @@ export const cardRouter = createTRPCRouter({
         createdBy: userId,
       });
 
+      emitCardUpdatedForLabelChange(
+        ctx,
+        card,
+        label,
+        "added",
+        input.cardPublicId,
+      );
       return { newLabel: true };
     }),
   addOrRemoveMember: protectedProcedure

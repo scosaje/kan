@@ -9,8 +9,175 @@ html {
 [contenteditable="true"]:empty:before {
   content: attr(placeholder);
   display: block;
-  color: #707070;
+  color: #54667a;
   font-size: 0.8rem;
+}
+
+/* Maven / Gotham accents for the command-center skin */
+.dark {
+  --kan-accent: #38bdf8;          /* cyan-blue, primary action */
+  --kan-accent-strong: #7dd3fc;
+  --kan-warn: #f59e0b;            /* amber for caution */
+  --kan-alert: #ef4444;            /* red for FLASH */
+  --kan-grid: rgba(125, 211, 252, 0.06);
+}
+
+/* Subtle grid overlay on the board background — feels like a tactical map */
+.dark .bg-dark-50 {
+  background-image:
+    linear-gradient(var(--kan-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--kan-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+/* Tighten card chrome: thinner, cooler borders */
+.dark .border,
+.dark .border-dark-200,
+.dark .border-dark-300,
+.dark .border-dark-400 {
+  border-color: #1a2530;
+}
+
+/* Replace the magenta/violet conic accent with Maven cyan */
+.dark .gradient-border::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 45deg,
+    rgba(56, 189, 248, 0.55) 85deg,
+    rgba(125, 211, 252, 0.45) 95deg,
+    transparent 110deg,
+    transparent 360deg
+  );
+}
+
+/* ============================================================
+ * Maven / Gotham accent treatment
+ * ============================================================ */
+
+/* Bright cyan focus/active rings on every interactive surface.
+ * Tailwind's default focus ring uses indigo; we retarget to the kan-accent. */
+.dark *:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 1px rgba(6, 9, 14, 0.95),
+    0 0 0 2px var(--kan-accent),
+    0 0 12px -2px rgba(56, 189, 248, 0.45) !important;
+  border-radius: 4px;
+}
+
+/* Buttons / interactive chips: subtle cyan lift on hover */
+.dark button:not(:disabled):hover,
+.dark a:hover {
+  transition: box-shadow 120ms ease, color 120ms ease,
+    background-color 120ms ease, border-color 120ms ease;
+}
+
+/* Lane headers (list titles in the board) — give them a thin top accent
+ * so the columns read like swim-lanes in an ops console. The board markup
+ * uses contenteditable spans for list names inside flex containers; we
+ * target the column wrapper via the .kan-card sibling pattern using a
+ * structural rule on common widths. */
+.dark [role="list"] > div:first-child,
+.dark .kan-list-header,
+.dark [class*="list-header"] {
+  border-top: 1px solid rgba(56, 189, 248, 0.18);
+}
+
+/* Drag-in-progress card: pronounced cyan ring, slight elevation */
+.dark .kan-card[data-rbd-draggable-id]:is(:active, [data-rbd-dragging="true"]),
+.dark [data-rbd-drag-handle-context-id] .kan-card:active {
+  box-shadow:
+    0 0 0 1px var(--kan-accent),
+    0 8px 24px -4px rgba(56, 189, 248, 0.35),
+    0 18px 40px -10px rgba(0, 0, 0, 0.6) !important;
+  border-color: transparent !important;
+}
+
+/* Hover state on cards — bright but quiet: cyan border, no colour shift */
+.dark .kan-card:hover {
+  border-color: rgba(56, 189, 248, 0.35) !important;
+}
+
+/* FLASH-lane treatment helpers
+ * (the inline classes on Card.tsx supply the rail; this adds a slow pulse) */
+@keyframes kan-flash-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 2px 0 0 rgba(251, 191, 36, 0.9),
+      0 0 0 1px rgba(251, 191, 36, 0.18),
+      0 0 18px -2px rgba(251, 191, 36, 0.22);
+  }
+  50% {
+    box-shadow:
+      inset 2px 0 0 rgba(251, 191, 36, 1),
+      0 0 0 1px rgba(251, 191, 36, 0.32),
+      0 0 26px -2px rgba(251, 191, 36, 0.45);
+  }
+}
+.dark .kan-card[data-flash] {
+  animation: kan-flash-pulse 3.2s ease-in-out infinite;
+}
+
+/* Mono-glyph icon treatment: most react-icons inside dark UI inherit
+ * `currentColor`. The few that hard-code colour are usually labels/avatars,
+ * which we leave alone. Tighten generic SVG icon weight for a Gotham feel. */
+.dark .kan-card svg,
+.dark header svg,
+.dark nav svg,
+.dark aside svg,
+.dark [role="dialog"] svg {
+  stroke-width: 1.6;
+}
+
+/* Link / primary-action buttons: cyan accent for "indigo" defaults */
+.dark .text-indigo-500,
+.dark .text-indigo-400,
+.dark .text-violet-500,
+.dark .text-violet-400 {
+  color: var(--kan-accent) !important;
+}
+.dark .bg-indigo-600,
+.dark .bg-indigo-500,
+.dark .bg-violet-600,
+.dark .bg-violet-500 {
+  background-color: #0f4d6b !important;
+  color: #e6f4ff !important;
+}
+.dark .bg-indigo-600:hover,
+.dark .bg-indigo-500:hover {
+  background-color: #15607f !important;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5),
+    0 0 18px -4px rgba(56, 189, 248, 0.45);
+}
+.dark .ring-indigo-500,
+.dark .ring-violet-500 {
+  --tw-ring-color: var(--kan-accent) !important;
+}
+
+/* Selected/active state on list rows (members, labels, settings nav) */
+.dark [aria-selected="true"],
+.dark [data-selected="true"],
+.dark [data-headlessui-state~="active"] {
+  box-shadow: inset 2px 0 0 var(--kan-accent);
+}
+
+/* Scrollbar — match the cool palette */
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #1f2d3a !important;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #2a3845 !important;
+}
+.dark ::-webkit-scrollbar-track {
+  background-color: #0b1118 !important;
+}
+
+/* Selection cursor: cyan tint */
+.dark ::selection {
+  background: rgba(56, 189, 248, 0.35);
+  color: #e6ebf1;
 }
 
 .gradient-border::before {

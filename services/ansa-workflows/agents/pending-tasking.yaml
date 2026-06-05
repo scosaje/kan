@@ -1,0 +1,19 @@
+version: 1
+agent: PendingTaskingAgent
+lane: TASKING
+board_match: any
+mode: executor
+poll_interval_seconds: 25
+sla_minutes: 45
+on_card_arrived:
+  comment: "Tasking queued — waiting for asset slot. ROE-CLEARED label gates release-to-strike. (PendingTaskingAgent)"
+on_sla_breach:
+  comment: "Tasking SLA breach (>{{sla_minutes}}m) — escalating to JFACC ATO desk."
+advance:
+  all_labels: ["ROE-CLEARED"]
+  to_lane: "EXECUTING"
+  comment: "ROE-CLEARED present — releasing weapons authority. Card advancing to EXECUTING. (PendingTaskingAgent)"
+abort:
+  any_label: ["MISSION-CANCELLED"]
+  to_lane: "DONE"
+  comment: "Mission cancelled. Card closed. (PendingTaskingAgent)"

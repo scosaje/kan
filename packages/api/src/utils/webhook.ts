@@ -48,12 +48,35 @@ function generateSignature(payload: string, secret: string): string {
  * Requires HTTPS and blocks private/internal IP ranges, localhost,
  * and cloud metadata endpoints.
  */
+/**
+ * Hostnames that are allowed to receive webhooks over plain HTTP from inside
+ * the cluster. Comma-separated list in env. Bypasses the HTTPS-only + private
+ * IP / localhost SSRF guards for these specific hostnames only.
+ *
+ * Used by the Kan ↔ Temporal bridge (`http://kan-temporal-bridge:8090`).
+ * Anything not listed still goes through the normal SSRF gauntlet.
+ */
+const internalHosts = new Set(
+  (process.env.KAN_WEBHOOK_INTERNAL_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean),
+);
+const isInternalHost = (urlStr: string): boolean => {
+  try {
+    return internalHosts.has(new URL(urlStr).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 export const webhookUrlSchema = z
   .string()
   .url()
   .max(2048)
   .refine(
     (url) => {
+      if (isInternalHost(url)) return true;
       try {
         return new URL(url).protocol === "https:";
       } catch {
@@ -64,6 +87,7 @@ export const webhookUrlSchema = z
   )
   .refine(
     (url) => {
+      if (isInternalHost(url)) return true;
       try {
         const hostname = new URL(url).hostname.toLowerCase();
         return !(
@@ -94,6 +118,7 @@ export const webhookUrlSchema = z
   )
   .refine(
     (url) => {
+      if (isInternalHost(url)) return true;
       try {
         const hostname = new URL(url).hostname.toLowerCase();
         const ipv4Match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(hostname);

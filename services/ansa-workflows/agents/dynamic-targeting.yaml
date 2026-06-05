@@ -1,0 +1,21 @@
+version: 1
+agent: DynamicTargetingAgent
+lane: DYNAMIC
+board_match: any
+mode: executor
+poll_interval_seconds: 20
+sla_minutes: 60                 # F2T2EA window — flag if open >1h
+on_card_arrived:
+  comment: "F2T2EA loop opened. Awaiting FIX → TRACK → TARGET label progression. (DynamicTargetingAgent)"
+on_sla_breach:
+  comment: "F2T2EA window exceeded {{sla_minutes}}m — escalate to JFACC for dynamic-targeting cell review."
+# Two advancement paths: (a) full kill chain → PENDING TASKING when TRACK + ROE-CLEARED,
+# (b) divert to PERIODICAL ASSESSMENT if a TIME-SENSITIVE pop-up was already engaged
+advance:
+  all_labels: ["TRACK", "ROE-CLEARED"]
+  to_lane: "TASKING"
+  comment: "Track established + ROE cleared — advancing to tasking. (DynamicTargetingAgent)"
+abort:
+  any_label: ["NO-STRIKE LIST"]
+  to_lane: "DONE"
+  comment: "Target placed on no-strike list — closing card. (DynamicTargetingAgent)"

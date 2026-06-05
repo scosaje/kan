@@ -1,0 +1,23 @@
+version: 1
+agent: AssessmentAgent
+lane: ASSESS
+board_match: any
+mode: executor
+poll_interval_seconds: 60
+sla_minutes: 240                # 4-hour BDA window before auto-close
+on_card_arrived:
+  comment: "BDA window open — awaiting hyperspectral / FMV / NTM revisit. (AssessmentAgent)"
+on_sla_breach:
+  comment: "BDA SLA breach (>{{sla_minutes}}m) — auto-confirming functional kill and closing."
+advance:
+  any_label: ["ASSESS", "BDA-CONFIRMED"]
+  to_lane: "DONE"
+  comment: "BDA confirmed — closing card. (AssessmentAgent)"
+auto_advance:
+  after_minutes: 240
+  to_lane: "DONE"
+  comment: "BDA window expired — auto-closing with assumed functional kill. (AssessmentAgent)"
+abort:
+  any_label: ["RESTRIKE-REQUIRED"]
+  to_lane: "TASKING"
+  comment: "Restrike recommended — re-queueing for tasking. (AssessmentAgent)"
