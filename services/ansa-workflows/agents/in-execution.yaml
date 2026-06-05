@@ -1,0 +1,20 @@
+version: 1
+agent: ExecutionAgent
+lane: EXECUTING
+board_match: any
+mode: executor
+poll_interval_seconds: 15
+sla_minutes: 10                 # TOT timer — most strikes resolve in minutes
+on_card_arrived:
+  comment: "Strike package committed — TOT timer started. Awaiting BDA cue. (ExecutionAgent)"
+on_sla_breach:
+  comment: "TOT exceeded {{sla_minutes}}m without BDA cue — verify strike package status."
+# Auto-advance after dwell expires; BDA collection happens in next lane
+auto_advance:
+  after_minutes: 12
+  to_lane: "ASSESS"
+  comment: "Engagement window closed — handing to BDA cell. (ExecutionAgent)"
+abort:
+  any_label: ["MISSION-ABORT"]
+  to_lane: "DONE"
+  comment: "Mission aborted in execution. Card closed. (ExecutionAgent)"

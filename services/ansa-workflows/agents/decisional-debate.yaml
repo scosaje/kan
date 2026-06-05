@@ -1,0 +1,19 @@
+version: 1
+agent: DecisionalDebateAgent
+lane: DEBATE
+board_match: any
+mode: executor                  # executor | advisor
+poll_interval_seconds: 30
+sla_minutes: 30
+on_card_arrived:
+  comment: "Decision review opened — assigned to NCA queue. Expected decision in <{{sla_minutes}}m>. Agent: DecisionalDebateAgent."
+on_sla_breach:
+  comment: "SLA breach: card has dwelled >{{sla_minutes}}m in DECISIONAL DEBATE — escalating to deputy J3."
+advance:
+  any_label: ["ROE-CLEARED", "DECISION-APPROVED"]
+  to_lane: "DYNAMIC"
+  comment: "Decision: APPROVE — handing to dynamic targeting. (DecisionalDebateAgent)"
+abort:
+  any_label: ["NO-STRIKE LIST", "DECISION-DENIED"]
+  to_lane: "DONE"
+  comment: "Decision: HOLD/DENY. Card archived. (DecisionalDebateAgent)"

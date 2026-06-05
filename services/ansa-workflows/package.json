@@ -1,0 +1,28 @@
+{
+  "name": "@ansa/test-workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sample ANSA Temporal workflows that drive Kan via the public kan-board-ops activity surface. Demonstrates bidirectional integration with no Kan source code dependency — only the Temporal client + activity stubs.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start:worker": "node dist/worker.js",
+    "start:isr": "node dist/start.js",
+    "supervisor": "node dist/agents/startSupervisor.js",
+    "dev:worker": "tsx watch src/worker.ts",
+    "dev:isr": "tsx src/start.ts"
+  },
+  "dependencies": {
+    "@temporalio/client": "^1.11.1",
+    "@temporalio/worker": "^1.11.1",
+    "@temporalio/workflow": "^1.11.1",
+    "@temporalio/activity": "^1.11.1",
+    "yaml": "^2.6.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

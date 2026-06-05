@@ -33,6 +33,7 @@ services:
       - NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - POSTGRES_URL=${POSTGRES_URL}
+      - KAN_WEBHOOK_INTERNAL_HOSTS=${KAN_WEBHOOK_INTERNAL_HOSTS:-kan-temporal-bridge}
 
       # Redis (optional - for rate limiting)
       - REDIS_URL=${REDIS_URL}
@@ -139,7 +140,7 @@ services:
       - POSTGRES_USER=kan
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - 5432:5432
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - kan_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -151,8 +152,51 @@ services:
     networks:
       - kan-network
 
+  ansa-workflows:
+    build:
+      context: ./services/ansa-workflows
+    container_name: ansa-workflows
+    restart: unless-stopped
+    networks:
+      - mandate_default
+    environment:
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal-server:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - ANSA_TASK_QUEUE=${ANSA_TASK_QUEUE:-ansa-mandate}
+    depends_on:
+      kan-temporal-bridge:
+        condition: service_started
+
+  kan-temporal-bridge:
+    build:
+      context: ./services/temporal-bridge
+    container_name: kan-temporal-bridge
+    restart: unless-stopped
+    networks:
+      - kan-network
+      - mandate_default
+    environment:
+      - BRIDGE_PORT=8090
+      - BRIDGE_PUBLIC_URL=http://kan-temporal-bridge:8090
+      - BRIDGE_WEBHOOK_SECRET=${BRIDGE_WEBHOOK_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-temporal-server:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-kan-card-tasks}
+      - KAN_API_BASE=http://kan-web:3000/api/v1
+      - KAN_INTERNAL_EMAIL=${KAN_INTERNAL_EMAIL}
+      - KAN_INTERNAL_PASSWORD=${KAN_INTERNAL_PASSWORD}
+      - POSTGRES_URL=${POSTGRES_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_started
+
 networks:
   kan-network:
+  mandate_default:
+    external: true
 
 volumes:
   kan_postgres_data:
