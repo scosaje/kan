@@ -17,6 +17,20 @@ export interface BoardLists {
   lists: { publicId: string; name: string }[];
 }
 
+/**
+ * Lane the card just arrived in, for lane-agent fan-out. A card "arrives"
+ * in a lane when it is moved there OR created there in-place (mandate's
+ * nomination cards land directly in NOMINATED and never produce a
+ * card.moved). Updates and deletes are not arrivals.
+ */
+export function laneArrivalLane(
+  event: string,
+  list: { name: string } | undefined,
+): string | undefined {
+  if (event !== "card.moved" && event !== "card.created") return undefined;
+  return list?.name;
+}
+
 // Pull the source lane name out of `changes.list.from.name`.
 export function readListChangeFromName(
   changes: KanWebhookChangeSet | undefined,
