@@ -1,0 +1,9 @@
+version: 1
+agent: MavenNominationAdvisor
+lane: NOMINATED
+# Only the maven-<agency> boards. Add agencies as their boards appear.
+board_match: ["maven-dss", "maven-npf", "maven-nig_army", "maven-dia"]
+mode: advisor
+poll_interval_seconds: 30
+on_card_arrived:
+  comment: "[advisor] Maven nomination received. Review the COP intel + links in the description; drag NOMINATED→APPROVED to approve, or →REJECTED to reject. (MavenNominationAdvisor)"
