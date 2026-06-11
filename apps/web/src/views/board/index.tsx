@@ -530,6 +530,10 @@ export default function BoardPage({ isTemplate }: { isTemplate?: boolean }) {
         title={`${boardData?.name ?? (isTemplate ? t`Board` : t`Template`)} | ${workspace.name ?? t`Workspace`}`}
       />
       <div className="relative flex h-full flex-col">
+        {/* MAVEN classification strip — shared visual language with the COP UI. */}
+        <div className="maven-classbar" role="status" aria-label="Session classification">
+          SECRET // REL NGA
+        </div>
         <PatternedBackground />
         <div className="z-10 flex w-full flex-col justify-between p-6 md:flex-row md:p-8">
           {isLoading && !boardData && (

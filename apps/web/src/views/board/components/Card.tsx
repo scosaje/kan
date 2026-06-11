@@ -84,7 +84,7 @@ const Card = ({
       )}
     >
       {ticketNumber && (
-        <span className="mb-1 text-xs text-light-700 dark:text-dark-800">
+        <span className="mb-1 font-mono text-xs tracking-tight tabular-nums text-light-700 dark:text-dark-800">
           {ticketNumber}
         </span>
       )}
