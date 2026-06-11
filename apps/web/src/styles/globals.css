@@ -120,6 +120,34 @@ html {
   animation: kan-flash-pulse 3.2s ease-in-out infinite;
 }
 
+/* ============================================================
+ * MAVEN board polish — classification strip + kill-chain lanes
+ * (shared visual language with the ANSA-Maven COP UI)
+ * ============================================================ */
+
+/* Top classification strip — mirrors the COP UI banner (SECRET red). */
+.maven-classbar {
+  width: 100%;
+  flex-shrink: 0;
+  text-align: center;
+  font-family: var(--font-geist-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 3px 0;
+  background: #e0322b; /* SECRET — matches cop-ui --cls-secret */
+  color: #0b0d10;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+/* Kill-chain lane headers: a touch stronger so DEBATE → DONE read as
+ * pipeline stages (builds on the thin cyan rail above). */
+.dark [role="list"] > div:first-child {
+  border-top-width: 2px;
+  border-top-color: rgba(56, 189, 248, 0.3);
+}
+
 /* Mono-glyph icon treatment: most react-icons inside dark UI inherit
  * `currentColor`. The few that hard-code colour are usually labels/avatars,
  * which we leave alone. Tighten generic SVG icon weight for a Gotham feel. */
