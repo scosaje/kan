@@ -18,7 +18,7 @@ import { bootstrap, shutdown as shutdownPg } from "./registration.js";
 import * as activities from "./temporal/activities.js";
 import * as boardOps from "./temporal/board-ops.js";
 import { agentWorkflowId, CARD_ARRIVED_SIGNAL } from "./temporal/agentIds.js";
-import { resolveFromLaneName } from "./lane-resolution.js";
+import { laneArrivalLane, resolveFromLaneName } from "./lane-resolution.js";
 import { handleMandateCardMove } from "./temporal/mandate-cards.js";
 import {
   laneChangedSignal,
@@ -245,10 +245,11 @@ async function dispatch(
   // Fan out to a LaneAgent supervising the destination lane. This is the
   // autonomous-agent path — runs in addition to the per-card workflow signal
   // below. The agent watches all cards entering its lane (regardless of
-  // WORKFLOW tag) and applies lane-level rules.
-  if (payload.event === "card.moved" && payload.data.list?.name) {
-    const lane = payload.data.list.name;
-    const agentId = agentWorkflowId(boardPublicId, lane);
+  // WORKFLOW tag) and applies lane-level rules. Arrival = moved into the
+  // lane OR created in it in-place (e.g. mandate nomination cards).
+  const arrivalLane = laneArrivalLane(payload.event, payload.data.list);
+  if (arrivalLane) {
+    const agentId = agentWorkflowId(boardPublicId, arrivalLane);
     if (await agentExists(temporal, agentId)) {
       await safeSignal(temporal, agentId, reqId, (h) =>
         h.signal(CARD_ARRIVED_SIGNAL, cardPublicId),

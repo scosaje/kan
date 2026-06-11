@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  laneArrivalLane,
   readListChangeFromId,
   readListChangeFromName,
   resolveFromLaneName,
@@ -51,6 +52,39 @@ describe("readListChangeFromId (real Kan payload shape)", () => {
     expect(
       readListChangeFromId({ listId: { from: { name: "X" }, to: "y" } }),
     ).toBeUndefined();
+  });
+});
+
+describe("laneArrivalLane", () => {
+  it("treats card.moved into a named list as a lane arrival", () => {
+    expect(laneArrivalLane("card.moved", { id: "l1", name: "APPROVED" })).toBe(
+      "APPROVED",
+    );
+  });
+
+  it("treats card.created in a named list as a lane arrival", () => {
+    // Regression: cards created in-place (maven nominations land directly
+    // in NOMINATED) never reached lane agents because only card.moved
+    // fanned out — the advisor agent never greeted them.
+    expect(
+      laneArrivalLane("card.created", { id: "l1", name: "NOMINATED" }),
+    ).toBe("NOMINATED");
+  });
+
+  it("does not treat card.updated as a lane arrival", () => {
+    expect(
+      laneArrivalLane("card.updated", { id: "l1", name: "NOMINATED" }),
+    ).toBeUndefined();
+  });
+
+  it("does not treat card.deleted as a lane arrival", () => {
+    expect(
+      laneArrivalLane("card.deleted", { id: "l1", name: "NOMINATED" }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the payload has no list", () => {
+    expect(laneArrivalLane("card.created", undefined)).toBeUndefined();
   });
 });
 
