@@ -18,6 +18,7 @@ import { bootstrap, shutdown as shutdownPg } from "./registration.js";
 import * as activities from "./temporal/activities.js";
 import * as boardOps from "./temporal/board-ops.js";
 import { agentWorkflowId, CARD_ARRIVED_SIGNAL } from "./temporal/agentIds.js";
+import { resolveFromLaneName } from "./lane-resolution.js";
 import { handleMandateCardMove } from "./temporal/mandate-cards.js";
 import {
   laneChangedSignal,
@@ -108,22 +109,6 @@ interface KanWebhookPayload {
     list?: { id: string; name: string };
     changes?: KanWebhookChanges;
   };
-}
-
-// Pull the source lane name out of the webhook's `changes` block.
-// Kan sends move payloads as `changes.list = {from: {...}, to: {...}}`.
-// Returns undefined if the block isn't present or doesn't look like a
-// move; callers must then skip transition validation.
-function readListChangeFromName(
-  changes: KanWebhookChanges | undefined,
-): string | undefined {
-  if (!changes) return undefined;
-  const listChange = (changes as Record<string, unknown>).list;
-  if (!listChange || typeof listChange !== "object") return undefined;
-  const from = (listChange as { from?: unknown }).from;
-  if (!from || typeof from !== "object") return undefined;
-  const name = (from as { name?: unknown }).name;
-  return typeof name === "string" ? name : undefined;
 }
 
 function verifySignature(raw: string, signature: string | undefined): boolean {
@@ -217,7 +202,13 @@ async function dispatch(
   // signals the owning workflow with the mapped signal name. Cards
   // without the block fall through to the legacy logic below.
   if (payload.event === "card.moved" && payload.data.list?.name) {
-    const fromLane = readListChangeFromName(payload.data.changes);
+    // Real Kan payloads carry the source list as a publicId in
+    // changes.listId; resolving it to a lane name needs a board fetch.
+    const fromLane = await resolveFromLaneName(
+      payload.data.changes,
+      boardPublicId,
+      (id) => boardOps.getBoard(id),
+    );
     const wasMandate = await handleMandateCardMove(
       {
         cardPublicId,
