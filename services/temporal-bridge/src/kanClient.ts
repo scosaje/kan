@@ -9,6 +9,19 @@ import { log } from "./log.js";
  * The bridge intentionally avoids the admin API key because not every
  * Kan endpoint accepts it; a normal session cookie works everywhere.
  */
+/** A non-2xx reply from Kan's REST API; `status` and `path` say which. */
+export class KanHttpError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly status: number,
+    body: string,
+  ) {
+    super(`Kan ${method} ${path} -> ${status}: ${body.slice(0, 400)}`);
+    this.name = "KanHttpError";
+  }
+}
+
 export class KanClient {
   private cookie: string | null = null;
   private loginPromise: Promise<void> | null = null;
@@ -107,7 +120,7 @@ export class KanClient {
     }
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Kan ${method} ${path} -> ${res.status}: ${text.slice(0, 400)}`);
+      throw new KanHttpError(method, path, res.status, text);
     }
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
