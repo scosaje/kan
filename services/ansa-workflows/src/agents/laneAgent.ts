@@ -14,6 +14,11 @@
  * Long-running shape: the agent calls continueAsNew once it has handled
  * MAX_HANDOVERS cards or after MAX_LIFETIME_MS, keeping workflow history
  * bounded. State (in-flight cards) is preserved across handovers.
+ *
+ * A card deleted from Kan is dropped from `inflight` as soon as a
+ * kan-board-ops call fails with KanCardNotFound. Nothing signals an agent
+ * when a card is deleted, so before this it re-fetched the card every tick
+ * for months (2026-06..09).
  */
 import {
   proxyActivities,
@@ -24,6 +29,9 @@ import {
   sleep,
   log as wfLog,
   continueAsNew,
+  patched,
+  ActivityFailure,
+  ApplicationFailure,
 } from "@temporalio/workflow";
 import type { AgentConfig } from "./config.js";
 
@@ -81,6 +89,20 @@ export const configQuery = defineQuery<AgentConfig>("config");
 
 const MAX_HANDOVERS = 200;
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24h
+
+// Failure type kan-board-ops raises when Kan says a card does not exist.
+const KAN_CARD_NOT_FOUND = "KanCardNotFound";
+// Guards the drop-on-not-found branch so histories recorded before it
+// replay down the old path.
+const DROP_GONE_CARDS_PATCH = "lane-agent-drop-gone-cards-v1";
+
+function cardIsGone(e: unknown): boolean {
+  return (
+    e instanceof ActivityFailure &&
+    e.cause instanceof ApplicationFailure &&
+    e.cause.type === KAN_CARD_NOT_FOUND
+  );
+}
 
 function tpl(s: string, vars: Record<string, string | number>): string {
   return s.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? ""));
@@ -197,6 +219,12 @@ export async function LaneAgentWorkflow(input: LaneAgentInput): Promise<void> {
           );
           state.greeted = true;
         } catch (e) {
+          if (cardIsGone(e) && patched(DROP_GONE_CARDS_PATCH)) {
+            wfLog.info("card no longer exists — dropped", { publicId: state.publicId });
+            inflight.delete(state.publicId);
+            handovers++;
+            continue;
+          }
           wfLog.warn("greeting failed", { err: (e as Error).message });
         }
       }
@@ -206,6 +234,12 @@ export async function LaneAgentWorkflow(input: LaneAgentInput): Promise<void> {
       try {
         card = await ops.getCard(state.publicId);
       } catch (e) {
+        if (cardIsGone(e) && patched(DROP_GONE_CARDS_PATCH)) {
+          wfLog.info("card no longer exists — dropped", { publicId: state.publicId });
+          inflight.delete(state.publicId);
+          handovers++;
+          continue;
+        }
         wfLog.warn("getCard failed; will retry next tick", { err: (e as Error).message });
         continue;
       }

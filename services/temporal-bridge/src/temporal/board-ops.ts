@@ -18,9 +18,9 @@
  *   await ops.postComment("abc123def456", "BDA available");
  */
 import crypto from "node:crypto";
-import { Context } from "@temporalio/activity";
+import { ApplicationFailure, Context } from "@temporalio/activity";
 import { config } from "../config.js";
-import { kan } from "../kanClient.js";
+import { kan, KanHttpError } from "../kanClient.js";
 import { log } from "../log.js";
 
 /**
@@ -122,9 +122,32 @@ async function _firstWorkspaceId(): Promise<string> {
   return wss[0]!.workspace.publicId;
 }
 
+// ---- card not found -----------------------------------------------------
+/**
+ * Failure type for a card Kan says does not exist (deleted, or never was).
+ * It is non-retryable: retrying cannot bring the card back. Callers that
+ * track cards (LaneAgentWorkflow) match on this type and stop tracking.
+ */
+export const KAN_CARD_NOT_FOUND = "KanCardNotFound";
+
+async function onCard<T>(cardPublicId: string, op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (e) {
+    if (
+      e instanceof KanHttpError &&
+      e.status === 404 &&
+      e.path.startsWith(`/cards/${cardPublicId}`)
+    ) {
+      throw ApplicationFailure.nonRetryable(e.message, KAN_CARD_NOT_FOUND);
+    }
+    throw e;
+  }
+}
+
 // ---- read ---------------------------------------------------------------
 export async function getCard(cardPublicId: string) {
-  return kan.getCard(cardPublicId);
+  return onCard(cardPublicId, () => kan.getCard(cardPublicId));
 }
 export async function getBoard(boardPublicId: string) {
   return kan.getBoard(boardPublicId);
@@ -156,7 +179,7 @@ export async function postComment(cardPublicId: string, body: string) {
     /* if pre-check fails, post anyway — duplicate beats silent miss */
   }
   log.info({ cardPublicId, body: body.slice(0, 80) }, "ops.postComment");
-  return kan.postComment(cardPublicId, tagged);
+  return onCard(cardPublicId, () => kan.postComment(cardPublicId, tagged));
 }
 
 export async function moveCardToLane(
@@ -169,7 +192,7 @@ export async function moveCardToLane(
     (l) => l.name.trim().toUpperCase() === laneName.trim().toUpperCase(),
   );
   if (!list) throw new Error(`Lane "${laneName}" not on board ${boardPublicId}`);
-  await kan.moveCard(cardPublicId, list.publicId);
+  await onCard(cardPublicId, () => kan.moveCard(cardPublicId, list.publicId));
   log.info({ cardPublicId, boardPublicId, laneName }, "ops.moveCardToLane");
   return list.publicId;
 }
