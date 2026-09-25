@@ -107,6 +107,8 @@ interface KanWebhookPayload {
       boardId: string;
     };
     list?: { id: string; name: string };
+    /** Who made the change; absent for changes with no signed-in user. */
+    user?: { id: string; name: string | null };
     changes?: KanWebhookChanges;
   };
 }
@@ -215,10 +217,10 @@ async function dispatch(
         boardPublicId,
         toLane: payload.data.list.name,
         fromLane,
-        // Kan's webhook payload doesn't currently include actor
-        // identity. The signalled `requested_by` falls back to
-        // "kan-operator" inside handleMandateCardMove.
-        requestedBy: undefined,
+        // Kan names the actor; the signalled `requested_by` falls back to
+        // "kan-operator" inside handleMandateCardMove when it doesn't.
+        requestedBy: payload.data.user?.name ?? undefined,
+        actorUserId: payload.data.user?.id,
       },
       temporal,
     );

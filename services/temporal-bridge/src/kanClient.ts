@@ -13,12 +13,24 @@ export class KanClient {
   private cookie: string | null = null;
   private loginPromise: Promise<void> | null = null;
   private lastLoginAt: number | null = null;
+  private userId: string | null = null;
   private base = config.KAN_API_BASE;
   private authBase = config.KAN_API_BASE.replace(/\/api\/v1$/, "/api/auth");
 
   /** Last successful login time (epoch ms), or null. Used by /healthz. */
   get lastLoginEpochMs(): number | null {
     return this.lastLoginAt;
+  }
+
+  /**
+   * The Kan user id this client acts as. Kan stamps it on the webhooks for
+   * every change the bridge makes, so the webhook handler can tell the
+   * bridge's own card moves from an operator's. Null if Kan's sign-in reply
+   * did not carry it.
+   */
+  async selfUserId(): Promise<string | null> {
+    await this.ensureLogin();
+    return this.userId;
   }
 
   private async ensureLogin(): Promise<void> {
@@ -50,7 +62,12 @@ export class KanClient {
     if (!m) throw new Error("No session cookie returned by Better Auth");
     this.cookie = m[0];
     this.lastLoginAt = Date.now();
-    log.info("Kan session established");
+    const signIn = (await res.json().catch(() => null)) as { user?: { id?: unknown } } | null;
+    this.userId = typeof signIn?.user?.id === "string" ? signIn.user.id : null;
+    if (!this.userId) {
+      log.warn("Kan sign-in reply had no user id — own card moves can't be told apart");
+    }
+    log.info({ userId: this.userId }, "Kan session established");
   }
 
   async request<T = unknown>(

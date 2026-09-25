@@ -18,6 +18,14 @@
  * `[rejected]` comment back on the card; out-of-bound drags get a
  * `[no signal for FROM->TO]` comment. Cards without a `mandate-meta`
  * block are left to the legacy KanCardWorkflow / LaneAgent paths.
+ *
+ * Moves the bridge makes itself are not drags. Kan sends a `card.moved`
+ * webhook for every move, including the lane changes MANDATE workflows
+ * push through `moveCardToLane` and this module's own revert. Judging
+ * those as operator drags rejected every workflow-driven move and reverted
+ * it, and the revert was rejected in turn, so cards ping-ponged and never
+ * followed the workflow (2026-06..09). The webhook's actor id identifies
+ * the bridge's own moves, which are skipped.
  */
 
 import { Client as TemporalClient, WorkflowNotFoundError } from "@temporalio/client";
@@ -103,6 +111,8 @@ interface CardMovePayload {
   toLane: string;
   /** Best-effort actor identity from the webhook (Kan may not include it). */
   requestedBy?: string;
+  /** Kan user id of whoever made the move (the webhook's `data.user.id`). */
+  actorUserId?: string;
 }
 
 /**
@@ -141,6 +151,16 @@ export async function handleMandateCardMove(
 
   const meta = extractMandateMeta(card.description);
   if (!meta) return false;
+
+  if (payload.actorUserId && payload.actorUserId === (await kan.selfUserId())) {
+    // The bridge moved this card itself — a MANDATE workflow's lane change
+    // or a revert below. Nothing to validate or signal.
+    log.debug(
+      { cardPublicId, workflow_id: meta.workflow_id, fromLane, toLane },
+      "mandate: bridge's own move — skipped",
+    );
+    return true;
+  }
 
   if (!fromLane) {
     // Without a fromLane we can't compute the transition key. Log and
