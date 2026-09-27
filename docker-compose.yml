@@ -16,6 +16,14 @@ services:
     restart: "no"
 
   web:
+    # The image has only node (no shell/curl). /api/health answers 200 when the
+    # app is serving; added 2026-09-27 so a wedged web shows unhealthy.
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     image: ghcr.io/kanbn/kan:latest
     container_name: ${CONTAINER_NAME:-kan-web}
     ports:
