@@ -16,6 +16,12 @@ export type dbClient = NodePgDatabase<typeof schema> & {
   $client: Pool;
 };
 
+// One Postgres pool per process. Every request context calls
+// createDrizzleClient(), and a new Pool per call was never closed: a burst
+// of ~100 API requests held ~100 connections at once and Postgres refused
+// the rest ("too many clients already"), sign-ins included.
+let pgClient: dbClient | undefined;
+
 export const createDrizzleClient = (): dbClient => {
   const connectionString = process.env.POSTGRES_URL;
 
@@ -33,9 +39,11 @@ export const createDrizzleClient = (): dbClient => {
     return db as unknown as dbClient;
   }
 
+  if (pgClient) return pgClient;
   const pool = new Pool({
     connectionString,
   });
 
-  return drizzlePg(pool, { schema }) as dbClient;
+  pgClient = drizzlePg(pool, { schema }) as dbClient;
+  return pgClient;
 };
