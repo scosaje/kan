@@ -15,6 +15,9 @@ export const env = createEnv({
    */
   server: {
     KAN_ADMIN_API_KEY: z.string().optional(),
+    // REST API requests allowed per client IP per minute (default 100). A
+    // deployment whose automation shares one IP (the Temporal bridge) raises it.
+    KAN_API_RATE_LIMIT_POINTS: z.coerce.number().int().positive().optional(),
     BETTER_AUTH_SECRET: z.string(),
     BETTER_AUTH_TRUSTED_ORIGINS: z
       .string()

@@ -9,7 +9,7 @@ import { env } from "~/env";
 import { withRateLimit } from "@kan/api/utils/rateLimit";
 
 export default withRateLimit(
-  { points: 100, duration: 60 },
+  { points: env.KAN_API_RATE_LIMIT_POINTS ?? 100, duration: 60 },
   async (req: NextApiRequest, res: NextApiResponse) => {
     await cors(req, res);
 

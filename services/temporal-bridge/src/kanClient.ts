@@ -1,3 +1,4 @@
+import { Context } from "@temporalio/activity";
 import { config } from "./config.js";
 import { log } from "./log.js";
 
@@ -21,6 +22,24 @@ export class KanHttpError extends Error {
     this.name = "KanHttpError";
   }
 }
+
+/**
+ * When the running activity attempt stops counting (epoch ms), or null
+ * outside an activity. Temporal schedules a retry once an attempt times out,
+ * but the timed-out attempt keeps running unless it stops itself — so past
+ * this point a write could duplicate what the retry does.
+ */
+function attemptDeadlineMs(): number | null {
+  try {
+    const i = Context.current().info;
+    if (!i.startToCloseTimeoutMs) return null;
+    return i.currentAttemptScheduledTimestampMs + i.startToCloseTimeoutMs;
+  } catch {
+    return null;
+  }
+}
+// Leave room for the write itself to land before the deadline.
+const DEADLINE_MARGIN_MS = 250;
 
 export class KanClient {
   private cookie: string | null = null;
@@ -91,6 +110,11 @@ export class KanClient {
     rateLimitAttempt = 0,
   ): Promise<T> {
     await this.ensureLogin();
+    const deadline = attemptDeadlineMs();
+    if (method !== "GET" && deadline != null && Date.now() > deadline - DEADLINE_MARGIN_MS) {
+      // A retry owns this action now; writing too would duplicate it.
+      throw new Error(`Kan ${method} ${path} not sent: activity attempt deadline passed`);
+    }
     const res = await fetch(`${this.base}${path}`, {
       method,
       headers: {
@@ -114,6 +138,10 @@ export class KanClient {
         : Math.min(8000, 500 * Math.pow(2, rateLimitAttempt));
       const jitterMs = Math.floor(Math.random() * 250);
       const wait = baseMs + jitterMs;
+      if (deadline != null && Date.now() + wait > deadline - DEADLINE_MARGIN_MS) {
+        // Sleeping would outlive the attempt; fail now and let the retry go.
+        throw new KanHttpError(method, path, 429, "rate limited; backoff would pass the attempt deadline");
+      }
       log.warn({ method, path, attempt: rateLimitAttempt, waitMs: wait }, "Kan 429 — backing off");
       await new Promise((r) => setTimeout(r, wait));
       return this.request<T>(method, path, body, retried, rateLimitAttempt + 1);
@@ -199,9 +227,16 @@ export interface KanCard {
   publicId: string;
   title: string;
   description: string | null;
-  list?: { publicId: string; name: string };
+  /** The card's lane, with its board's lanes and labels (GET /cards/{id}). */
+  list?: {
+    publicId: string;
+    name: string;
+    board?: { publicId: string; name: string; labels: KanLabel[]; lists: { publicId: string; name: string }[] };
+  };
   labels?: KanLabel[];
   board?: { publicId: string; slug: string };
+  /** Comments live here (activities[].comment), not in a `comments` field. */
+  activities?: { type: string; comment?: { comment: string } | null }[];
 }
 export interface KanBoard {
   publicId: string;

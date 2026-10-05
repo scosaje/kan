@@ -20,7 +20,7 @@
 import crypto from "node:crypto";
 import { ApplicationFailure, Context } from "@temporalio/activity";
 import { config } from "../config.js";
-import { kan, KanHttpError } from "../kanClient.js";
+import { kan, KanHttpError, type KanCard } from "../kanClient.js";
 import { log } from "../log.js";
 
 /**
@@ -77,8 +77,7 @@ export async function ensureBoard(
   if (!lanes?.length) throw new Error("ensureBoard: lanes must be non-empty");
 
   const wsId = workspacePublicId
-    ?? config.MANDATE_WORKSPACE_PUBLIC_ID
-    ?? await _firstWorkspaceId();
+    ?? (config.MANDATE_WORKSPACE_PUBLIC_ID || await _firstWorkspaceId());
 
   // Look for an existing board by case-insensitive name match. We list
   // by workspace so the search is bounded.
@@ -164,14 +163,8 @@ export async function postComment(cardPublicId: string, body: string) {
   // Idempotency: embed a comment-only token. Retries pre-check the card's
   // existing comments and skip if the same token is already there.
   const tok = idempotencyToken();
-  const tagged = `${body}\n${idemTag(tok)}`;
   try {
-    type CardWithComments = { comments?: { comment?: string; content?: string }[] };
-    const c = (await kan.getCard(cardPublicId)) as unknown as CardWithComments;
-    const dup = (c.comments ?? []).some((cm) =>
-      (cm.comment ?? cm.content ?? "").includes(idemTag(tok)),
-    );
-    if (dup) {
+    if (hasComment(await kan.getCard(cardPublicId), idemTag(tok))) {
       log.info({ cardPublicId, tok }, "ops.postComment dedup hit");
       return;
     }
@@ -179,7 +172,12 @@ export async function postComment(cardPublicId: string, body: string) {
     /* if pre-check fails, post anyway — duplicate beats silent miss */
   }
   log.info({ cardPublicId, body: body.slice(0, 80) }, "ops.postComment");
-  return onCard(cardPublicId, () => kan.postComment(cardPublicId, tagged));
+  return onCard(cardPublicId, () => kan.postComment(cardPublicId, `${body}\n${idemTag(tok)}`));
+}
+
+/** True when one of the card's comments carries `tag`. */
+function hasComment(card: KanCard, tag: string): boolean {
+  return (card.activities ?? []).some((a) => (a.comment?.comment ?? "").includes(tag));
 }
 
 export async function moveCardToLane(
@@ -270,6 +268,7 @@ export async function createCard(
   title: string,
   description?: string,
   labelNames?: string[],
+  key?: string,
 ): Promise<{ publicId: string }> {
   const board = await kan.getBoard(boardPublicId);
   const list = board.lists.find(
@@ -279,16 +278,16 @@ export async function createCard(
 
   // Idempotency: bake the token into the description so a retried createCard
   // can locate any existing card with the same token and return it instead of
-  // creating a duplicate.
-  const tok = idempotencyToken();
+  // creating a duplicate. A caller `key` (stable across reconciler replays,
+  // which run under a fresh workflow id) wins over the activity's own token.
+  const tok = key || idempotencyToken();
   const taggedDesc = `${description ?? ""}\n\n${idemTag(tok)}`;
 
-  // Pre-check: search the list's cards for the token.
-  type ListWithCards = { cards?: { publicId: string; description?: string | null }[] };
-  const lwc = list as unknown as ListWithCards;
-  const dup = (lwc.cards ?? []).find((c) =>
-    (c.description ?? "").includes(idemTag(tok)),
-  );
+  // Pre-check every lane: the card may have moved on since a first attempt.
+  type CardLite = { publicId: string; description?: string | null };
+  const dup = board.lists
+    .flatMap((l) => ((l as unknown as { cards?: CardLite[] }).cards ?? []))
+    .find((c) => (c.description ?? "").includes(idemTag(tok)));
   if (dup) {
     log.info({ boardPublicId, tok, publicId: dup.publicId }, "ops.createCard dedup hit");
     return { publicId: dup.publicId };
@@ -307,6 +306,105 @@ export async function createCard(
   });
   log.info({ boardPublicId, laneName, title, publicId: card.publicId }, "ops.createCard");
   return { publicId: card.publicId };
+}
+
+// ---- one workflow action, one call ----------------------------------------
+
+/** What a workflow action wants the card to look like afterwards. */
+export interface CardSync {
+  lane?: string;
+  addLabels?: string[];
+  removeLabels?: string[];
+  title?: string;
+  description?: string;
+  comment?: string;
+}
+
+const META_BLOCK_RE = /<!--mandate-meta:[\s\S]*?-->/;
+const IDEM_BLOCK_RE = /<!--kan-idem:[\s\S]*?-->/g;
+
+/**
+ * `next` with the hidden blocks of `prev` it lacks put back: the
+ * mandate-meta block (without it operator drags stop reaching the workflow)
+ * and the kan-idem tag (without it a replayed createCard makes a duplicate).
+ */
+export function keepHiddenBlocks(next: string, prev: string | null | undefined): string {
+  let out = next;
+  const meta = (prev ?? "").match(META_BLOCK_RE)?.[0];
+  if (meta && !META_BLOCK_RE.test(out)) out = `${out.trimEnd()}\n\n${meta}`;
+  for (const tag of (prev ?? "").match(IDEM_BLOCK_RE) ?? []) {
+    if (!out.includes(tag)) out = `${out.trimEnd()}\n\n${tag}`;
+  }
+  return out;
+}
+
+/**
+ * Bring a card to the state one workflow action wants, from a single read:
+ * GET /cards/{id} already carries the card's lane, its labels and comments,
+ * and the board's lanes and labels. Then write only what differs — move if
+ * in another lane, toggle only labels whose presence differs, rewrite
+ * title/description only if changed, comment only if no comment carries
+ * `key`. A retry or a reconciler replay with the same key converges on the
+ * same card instead of repeating the action (about 5 Kan requests per rich
+ * action instead of about 14).
+ *
+ * Labels the board lacks are skipped, as createCard does. Returns what it
+ * changed.
+ */
+export async function syncCard(
+  cardPublicId: string,
+  boardPublicId: string,
+  spec: CardSync,
+  key?: string,
+): Promise<{ changed: string[] }> {
+  const card = await onCard(cardPublicId, () => kan.getCard(cardPublicId));
+  const board = card.list?.board;
+  const up = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
+  const changed: string[] = [];
+
+  if (spec.lane && up(card.list?.name) !== up(spec.lane)) {
+    const list = board?.lists.find((l) => up(l.name) === up(spec.lane));
+    if (!list) throw new Error(`Lane "${spec.lane}" not on board ${boardPublicId}`);
+    await onCard(cardPublicId, () => kan.moveCard(cardPublicId, list.publicId));
+    changed.push(`lane:${list.name}`);
+  }
+
+  const has = new Set((card.labels ?? []).map((l) => up(l.name)));
+  const toggles = [
+    ...(spec.addLabels ?? []).filter((n) => !has.has(up(n))).map((n) => ["+", n] as const),
+    ...(spec.removeLabels ?? []).filter((n) => has.has(up(n))).map((n) => ["-", n] as const),
+  ];
+  for (const [sign, name] of toggles) {
+    const lbl = board?.labels.find((l) => up(l.name) === up(name));
+    if (!lbl) continue;
+    // Kan's label endpoint toggles; presence was checked above.
+    await onCard(cardPublicId, () =>
+      kan.request("PUT", `/cards/${cardPublicId}/labels/${lbl.publicId}`),
+    );
+    changed.push(`${sign}${lbl.name}`);
+  }
+
+  const patch: { title?: string; description?: string } = {};
+  if (spec.title && spec.title !== card.title) patch.title = spec.title;
+  if (spec.description != null) {
+    const next = keepHiddenBlocks(spec.description, card.description);
+    if (next !== (card.description ?? "")) patch.description = next;
+  }
+  if (Object.keys(patch).length) {
+    await onCard(cardPublicId, () => kan.request("PUT", `/cards/${cardPublicId}`, patch));
+    changed.push(...Object.keys(patch));
+  }
+
+  if (spec.comment) {
+    const tag = idemTag(key || idempotencyToken());
+    if (!hasComment(card, tag)) {
+      await onCard(cardPublicId, () => kan.postComment(cardPublicId, `${spec.comment}\n${tag}`));
+      changed.push("comment");
+    }
+  }
+
+  log.info({ cardPublicId, boardPublicId, changed }, "ops.syncCard");
+  return { changed };
 }
 
 export async function setCardTitle(cardPublicId: string, title: string) {
