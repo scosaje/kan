@@ -194,6 +194,8 @@ services:
       - KAN_API_BASE=http://kan-web:3000/api/v1
       - KAN_INTERNAL_EMAIL=${KAN_INTERNAL_EMAIL}
       - KAN_INTERNAL_PASSWORD=${KAN_INTERNAL_PASSWORD}
+      # Workspace ensureBoard provisions into; empty = first one visible.
+      - MANDATE_WORKSPACE_PUBLIC_ID=${MANDATE_WORKSPACE_PUBLIC_ID:-}
       - POSTGRES_URL=${POSTGRES_URL}
     depends_on:
       postgres:

@@ -19,7 +19,7 @@ import * as activities from "./temporal/activities.js";
 import * as boardOps from "./temporal/board-ops.js";
 import { agentWorkflowId, CARD_ARRIVED_SIGNAL } from "./temporal/agentIds.js";
 import { laneArrivalLane, resolveFromLaneName } from "./lane-resolution.js";
-import { handleMandateCardMove } from "./temporal/mandate-cards.js";
+import { extractMandateMeta, handleMandateCardMove } from "./temporal/mandate-cards.js";
 import {
   laneChangedSignal,
   labelAddedSignal,
@@ -103,6 +103,7 @@ interface KanWebhookPayload {
       id: string;
       publicId?: string;
       title: string;
+      description?: string | null;
       listId: string;
       boardId: string;
     };
@@ -194,6 +195,21 @@ async function dispatch(
   if (payload.event === "card.deleted") {
     await safeSignal(temporal, wfId, reqId, (h) => h.signal(cardDeletedSignal));
     log.info({ wfId, reqId }, "signalled card delete");
+    return;
+  }
+
+  // The bridge's own move or edit of a MANDATE card (a workflow acting on
+  // its card) echoes back here. The payload alone says so — the actor and
+  // the card's mandate-meta block — so skip the Kan reads below: Kan gives
+  // the bridge a fixed request budget and each echo used to cost two GETs.
+  // card.created still fans out, because lane agents watch for new cards.
+  if (
+    (payload.event === "card.moved" || payload.event === "card.updated") &&
+    payload.data.user?.id &&
+    payload.data.user.id === (await kan.selfUserId()) &&
+    extractMandateMeta(payload.data.card.description)
+  ) {
+    log.debug({ cardPublicId, event: payload.event, reqId }, "mandate: bridge's own change — skipped");
     return;
   }
 
