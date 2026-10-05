@@ -235,6 +235,35 @@ export async function removeLabel(
   log.info({ cardPublicId, labelName, boardId }, "ops.removeLabel");
 }
 
+/**
+ * Create the labels in `labels` that the board lacks (name match is
+ * case-insensitive; an existing label keeps its colour). createCard and
+ * addLabel only attach labels the board already has — createCard silently
+ * drops unknown names — so a workflow gives a board its palette with this
+ * first. Idempotent.
+ *
+ * ponytail: check-then-create, so two workflows racing on a brand-new board
+ * can both create a label; Kan then shows it twice and lookups take the
+ * first. A per-board lock if that ever matters.
+ */
+export async function ensureLabels(
+  boardPublicId: string,
+  labels: { name: string; colour: string }[],
+): Promise<{ created: string[] }> {
+  const board = await kan.getBoard(boardPublicId);
+  const have = new Set((board.labels ?? []).map((l) => l.name.trim().toUpperCase()));
+  const created: string[] = [];
+  for (const { name, colour } of labels ?? []) {
+    const key = (name ?? "").trim().toUpperCase();
+    if (!key || have.has(key)) continue;
+    await kan.createLabel(boardPublicId, name.trim(), colour);
+    have.add(key);
+    created.push(name.trim());
+  }
+  if (created.length) log.info({ boardPublicId, created }, "ops.ensureLabels");
+  return { created };
+}
+
 export async function createCard(
   boardPublicId: string,
   laneName: string,

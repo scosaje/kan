@@ -6,6 +6,7 @@ const kanMock = vi.hoisted(() => ({
   getBoard: vi.fn(),
   postComment: vi.fn(),
   moveCard: vi.fn(),
+  createLabel: vi.fn(),
 }));
 
 vi.mock("../config.js", () => ({ config: {} }));
@@ -27,7 +28,7 @@ vi.mock("../kanClient.js", async () => {
 });
 
 import { KanHttpError } from "../kanClient.js";
-import { getCard, KAN_CARD_NOT_FOUND, moveCardToLane, postComment } from "./board-ops.js";
+import { ensureLabels, getCard, KAN_CARD_NOT_FOUND, moveCardToLane, postComment } from "./board-ops.js";
 
 const CARD = "vi9as7r8g1ui";
 const BOARD = "dr9x5vu0qs9x";
@@ -81,5 +82,19 @@ describe("card-not-found failures", () => {
     const boardGone = new KanHttpError("GET", `/boards/${BOARD}`, 404, "Board not found");
     kanMock.getBoard.mockRejectedValue(boardGone);
     expect(await failureOf(moveCardToLane(CARD, BOARD, "DONE"))).toBe(boardGone);
+  });
+});
+
+describe("ensureLabels", () => {
+  it("creates only the labels the board lacks, matching names case-insensitively", async () => {
+    kanMock.getBoard.mockResolvedValue({ lists: [], labels: [{ name: "Flash", publicId: "lbl1" }] });
+    const out = await ensureLabels(BOARD, [
+      { name: "FLASH", colour: "#dc2626" },
+      { name: "ARMED", colour: "#b91c1c" },
+      { name: "armed", colour: "#000000" },
+    ]);
+    expect(out).toEqual({ created: ["ARMED"] });
+    expect(kanMock.createLabel).toHaveBeenCalledTimes(1);
+    expect(kanMock.createLabel).toHaveBeenCalledWith(BOARD, "ARMED", "#b91c1c");
   });
 });
